@@ -1,223 +1,182 @@
 # VeriPay
 
-**Payment Reconciliation & Verification System**
+## Payment Reconciliation & Verification System
 
-VeriPay is a personal payment reconciliation and verification system I built to simplify and speed up the process of checking payment records against GCash transaction statements.
+VeriPay is a local-first payment reconciliation tool built to make a personal/client workflow faster and less repetitive. It imports Payment Records and GCash transaction statement workbooks, compares them by exact reference number, highlights records that need review, and creates annotated Excel outputs.
 
-The system was created primarily for my personal workflow and for work I perform with my client. Instead of manually checking transactions one by one, VeriPay helps automate the reconciliation process, identify records that need attention, and generate organized Excel outputs.
-
-VeriPay is currently designed primarily for local use, although it may be deployed again in the future depending on our needs.
+It is a private workflow tool, not a public payment processor, banking service, or SaaS product.
 
 ## Why I Built VeriPay
 
-Payment verification can become repetitive and time-consuming when working with many records.
+Reconciling payment records against transaction statements manually becomes time-consuming when there are many rows to check. VeriPay reduces that repetitive work, keeps verification runs organized, and leaves uncertain cases available for deliberate manual review.
 
-The usual process involves manually searching through GCash transaction statements, comparing reference numbers with payment records, identifying missing or duplicate transactions, and updating records manually.
-
-I built VeriPay to make that workflow faster and more organized.
-
-The goal is not to completely remove manual review, but to automate the repetitive parts while clearly identifying transactions that still require human verification.
+The project is primarily a practical tool for my own workflow and work performed for a client, rather than a public commercial service.
 
 ## Features
 
 - Payment Records XLSX import
-- GCash transaction statement XLSX import
-- Multiple GCash statement support
-- Exact reference-number reconciliation
-- Missing reference detection
-- Reference-not-found detection
-- Duplicate reference detection
-- Manual review workflow
-- CASH and BANK payment handling
-- Matched customer annotation
-- Verification history
+- One or more GCash statement XLSX imports per verification run
+- Exact reference-number reconciliation across the combined GCash transaction pool
+- Missing-reference, reference-not-found, and duplicate-reference review states
+- Safe handling for CASH, BANK, and unknown payment methods
+- Manual review with an audit trail
+- Matched Customer annotations for uniquely verified GCash transactions
+- Verification history and workspace-scoped access
 - Annotated Payment Records export
-- Individual annotated GCash exports
-- Workspace-based organization
+- One annotated GCash export for each uploaded GCash source workbook
+- Local Supabase authentication and workspace isolation
 
 ## How Verification Works
 
-For GCash payments, VeriPay uses the **exact transaction reference number** as the primary basis for reconciliation.
-
-The payment amount alone does **not** determine whether a transaction is verified.
-
-General behavior:
+For GCash payments, VeriPay uses the **exact transaction reference number** as the reconciliation key. It does not verify a payment from amount, customer name, dates, partial references, or fuzzy matching.
 
 | Situation | Result |
 | --- | --- |
-| One exact reference match | Verified |
-| Missing reference number | Needs Review |
-| Reference not found | Needs Review |
-| Duplicate reference | Needs Review |
-| Cash payment | Cash |
-| Bank payment | Bank |
+| One exact GCash reference match across all uploaded sources | Verified |
+| Missing Payment Record reference | Needs Review |
+| Reference not found in any GCash source | Needs Review |
+| Reference appears more than once, including across sources | Needs Review |
+| CASH payment | Cash handling |
+| BANK payment | Bank handling |
 
-When multiple GCash statements are uploaded, VeriPay checks references across the combined set of GCash transactions while preserving which source file each transaction came from.
-
-If the same reference number appears more than once, VeriPay does not automatically choose one. The transaction is instead marked for review.
-
-## Technology Stack
-
-VeriPay is built using technologies including:
-
-- Next.js
-- TypeScript
-- Tailwind CSS
-- Supabase
-- PostgreSQL
-- ExcelJS
-- Zod
-- Vitest
-- Playwright
-- Docker
-
-## Quick Start
-
-VeriPay currently runs locally.
-
-### Requirements
-
-Before starting VeriPay, make sure you have the required development tools installed, including:
-
-- Node.js
-- pnpm
-- Docker Desktop
-- Supabase CLI
-
-### Recommended Windows Startup
-
-The easiest way to start VeriPay is using the included:
-
-`VeriPay.bat`
-
-To start the system:
-
-1. Start **Docker Desktop**.
-2. Wait until Docker Desktop is fully running.
-3. Double-click **`VeriPay.bat`**.
-4. The launcher checks Docker and starts the local Supabase environment.
-5. VeriPay starts on your computer.
-6. The launcher waits for the application to become available.
-7. Your browser opens automatically to the VeriPay login page.
-8. Sign in and use the system.
-
-The local application runs at:
-
-`http://127.0.0.1:3000`
-
-For normal Windows use, `VeriPay.bat` is the recommended way to start the application.
-
-## Manual Startup
-
-For development or troubleshooting, VeriPay can also be started manually.
-
-Start local Supabase:
-
-```bash
-supabase start
-```
-
-Then start VeriPay:
-
-```bash
-pnpm dev
-```
-
-Open:
-
-`http://127.0.0.1:3000`
-
-## Stopping VeriPay
-
-In the terminal running VeriPay, press:
-
-`Ctrl + C`
-
-If Windows asks whether you want to terminate the batch job, confirm it.
-
-To also stop the local Supabase environment:
-
-```bash
-supabase stop
-```
-
-> **Important:** `supabase db reset` is not a normal shutdown command. It resets the local database and should not be used simply to stop VeriPay.
-
-## Using VeriPay
-
-A typical verification workflow is:
-
-1. Start VeriPay using `VeriPay.bat`.
-2. Sign in.
-3. Open the appropriate workspace.
-4. Start a verification run.
-5. Upload one Payment Records `.xlsx` file.
-6. Upload one or more GCash statement `.xlsx` files.
-7. Run the reconciliation.
-8. Review verified transactions and records requiring manual review.
-9. Resolve review cases when necessary.
-10. Download the annotated Payment Records workbook.
-11. Download the annotated workbook for each GCash source.
-12. Access previous verification runs through History when needed.
+Leading zeros are significant. A reference with leading zeros does not match a different reference without them. Amount differences do not decide a match when one exact reference exists.
 
 ## Multiple GCash Sources
 
-VeriPay supports reconciling one Payment Records workbook against multiple GCash statement files.
+A verification run accepts one Payment Records workbook and one or more GCash statement workbooks. VeriPay evaluates reference uniqueness across the combined transaction pool while retaining the source workbook for each GCash transaction.
 
-For example:
+If the same reference appears in two GCash sources, VeriPay requires review rather than choosing an account arbitrarily. Each GCash source receives its own annotated export.
 
-```text
-Payment Records.xlsx
-        +
-GCash Account 1.xlsx
-        +
-GCash Account 2.xlsx
+## Technology Stack
+
+- Next.js, React, and TypeScript
+- Tailwind CSS and shadcn/ui
+- Supabase Auth and PostgreSQL
+- ExcelJS for workbook parsing and annotated exports
+- Zod for runtime validation
+- Vitest for unit tests
+- Playwright for browser tests
+- Docker and the Supabase CLI for local services
+
+## Local Setup
+
+### Prerequisites
+
+- Windows with Node.js 22.12 or newer
+- pnpm 12 (the project uses Corepack)
+- Docker Desktop
+- Supabase CLI
+- Git
+
+Install dependencies from the repository root:
+
+```powershell
+corepack pnpm install
 ```
 
-The system searches for exact reference numbers across all uploaded GCash statements while preserving the original source of each transaction.
+Local VeriPay needs these public environment variable names:
 
-A reference must be unique across the GCash transaction pool to qualify for automatic verification.
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
-Each GCash source also receives its own annotated output rather than combining all GCash transactions into one file.
+Use values from your **local** Supabase stack only. Keep local environment files untracked. Do not place service-role keys, passwords, or other credentials in the repository or README.
 
-## Supported Files
+## Starting VeriPay
 
-VeriPay currently works with:
+### Local launcher
 
-`.xlsx`
+If `VeriPay.bat` is present in your checkout:
 
-Legacy `.xls` files are not supported.
+1. Start Docker Desktop and wait for its engine to be ready.
+2. Double-click `VeriPay.bat`.
+3. The launcher starts local Supabase, starts VeriPay, and opens the browser after the login page is available.
 
-Payment and transaction files may contain sensitive information and should be handled appropriately.
+Open VeriPay at `http://127.0.0.1:3000`.
+
+### Manual start
+
+1. Start the local Supabase stack:
+
+   ```powershell
+   supabase start
+   ```
+
+2. Set the two public environment variables above from the local `supabase status -o env` output. Do not use cloud values.
+
+3. Start the application:
+
+   ```powershell
+   pnpm dev --hostname 127.0.0.1 --port 3000
+   ```
+
+## Stopping VeriPay
+
+Press `Ctrl+C` in the development-server terminal to stop VeriPay.
+
+To stop the local Supabase containers when they are no longer needed:
+
+```powershell
+supabase stop
+```
+
+`supabase db reset` is not a normal shutdown command. It recreates the local database and can remove local test data and local users.
+
+## Using VeriPay
+
+1. Start VeriPay and sign in.
+2. Create or select the appropriate workspace.
+3. Open **New Verification**.
+4. Upload exactly one Payment Records XLSX workbook.
+5. Upload one or more GCash statement XLSX workbooks.
+6. Review each file preview and remove an accidental GCash source if needed.
+7. Select **Verify Payments**.
+8. Review Verified, Needs Review, Cash, and Bank outcomes.
+9. Resolve manual-review cases where appropriate.
+10. Download the annotated Payment Records workbook.
+11. Download an annotated workbook for each GCash source.
+12. Use History to revisit completed verification runs.
+
+## Input Files
+
+VeriPay supports `.xlsx` workbooks. Legacy `.xls` files are not supported.
+
+- **Payment Records workbook:** customer, amount, method, reference, and other supported payment fields.
+- **GCash statement workbook(s):** transaction rows containing the GCash reference and amount layout recognized by VeriPay.
+
+Do not commit client payment files, source workbooks, generated outputs, or local environment files.
 
 ## Local-First Usage
 
-VeriPay is currently a **local-first application**.
-
-The local environment uses Docker and Supabase to provide the database and authentication services required by the application.
-
-A public deployment is not required to use VeriPay.
-
-The application may be deployed in the future depending on operational needs, but its current primary purpose is supporting my personal and client workflow locally.
+VeriPay currently operates primarily as a local application. Docker and local Supabase provide the database and authentication environment needed for normal use. A deployment is not required for the current workflow.
 
 ## Data & Privacy
 
-VeriPay may process payment records and transaction information.
+VeriPay processes payment reconciliation information and should be treated as a private workflow tool.
 
-When using the system:
+- Keep source workbooks and exports in a secure location.
+- Do not commit customer or payment data.
+- Do not commit `.env` files or credentials.
+- Back up important source workbooks and verified outputs.
+- Use local test data for development and automated tests.
 
-- Keep source spreadsheets secure.
-- Do not commit customer or transaction files to Git.
-- Do not commit `.env` files.
-- Never publish API keys, passwords, database credentials, or other secrets.
-- Keep backups of important source files and generated outputs.
-- Avoid using real client information in public examples or test data.
+## Development and Testing
+
+Available project commands:
+
+```powershell
+pnpm typecheck       # TypeScript validation
+pnpm lint            # ESLint with zero warnings
+pnpm test            # Vitest unit tests
+supabase test db     # Local database and RLS tests
+pnpm test:e2e        # Playwright browser tests
+pnpm build           # Production-style Next.js build
+```
+
+Browser and database tests require the local Supabase stack. Use local environment variables only.
 
 ## Project Status
 
-VeriPay is actively developed and used as a personal workflow tool.
-
-The current setup is local-first. Deployment may be added or changed in the future depending on operational requirements.
+VeriPay is actively developed as a personal workflow tool. The current setup is local-first; deployment may be added or changed later if operational needs require it.
 
 ## Disclaimer
 

@@ -110,6 +110,13 @@ test.each(["=SUM(1,2)", "+CMD", "-1+2", "@SUM(A1)", "\t=HYPERLINK(\"x\")"])("ann
 test("filenames use sanitized original filenames with the requested suffix", () => {
   expect(exportFilename(fixture.data, "payments")).toBe("Payment Testing - Verified.xlsx");
   expect(exportFilename(fixture.data, "gcash")).toBe("Gcash Testing - Matched.xlsx");
+  const multiSource = structuredClone(fixture.data);
+  const [first, second] = multiSource.gcash;
+  if (!first || !second) throw new Error("Missing GCash fixtures");
+  if (typeof first.raw_data !== "object" || first.raw_data === null || typeof second.raw_data !== "object" || second.raw_data === null) throw new Error("Missing GCash provenance");
+  first.raw_data = { ...first.raw_data, filename: "GCash Main.xlsx", source_index: 0 };
+  second.raw_data = { ...second.raw_data, filename: "GCash Secondary.xlsx", source_index: 1 };
+  expect(exportFilename(multiSource, "gcash", 1)).toBe("GCash Secondary - Matched.xlsx");
   const data = exportFixture(); data.run.payment_filename = '../bad\r\n"name.xlsx';
   expect(exportFilename(data, "payments")).toBe("bad___name - Verified.xlsx");
 });

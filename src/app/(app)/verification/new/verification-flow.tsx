@@ -52,6 +52,25 @@ function useUpload<T extends ParseResult>(parse: (form: FormData) => Promise<T>)
     ready: !!result?.success && (result.validCount ?? 0) > 0 };
 }
 
+function useGcashUploads() {
+  const [uploads, setUploads] = useState<{ file: File; result: GcashUploadParseResult | null; pending: boolean; error: string | null }[]>([]);
+  async function select(files: readonly File[]) {
+    const additions = files.map((file) => ({ file, result: null, pending: true, error: null }));
+    setUploads((current) => [...current, ...additions]);
+    await Promise.all(additions.map(async (entry) => {
+      try {
+        if (entry.file.size > 10 * 1024 * 1024) throw new Error("Each file must be 10 MB or smaller.");
+        const form = new FormData(); form.set("file", entry.file);
+        const result = await parseGcashUploadAction(form);
+        setUploads((current) => current.map((item) => item.file === entry.file ? { ...item, result, pending: false } : item));
+      } catch {
+        setUploads((current) => current.map((item) => item.file === entry.file ? { ...item, pending: false, error: "Could not read this file. Use an Excel file up to 10 MB and try again." } : item));
+      }
+    }));
+  }
+  return { uploads, select, remove: (file: File) => setUploads((current) => current.filter((item) => item.file !== file)), reset: () => setUploads([]), ready: uploads.length > 0 && uploads.every((item) => !!item.result?.success && (item.result.validCount ?? 0) > 0) };
+}
+
 function FileSummary({ result }: { result: ParseResult }) {
   return (
     <div className="space-y-3 text-sm">
@@ -78,7 +97,7 @@ function FileSummary({ result }: { result: ParseResult }) {
 
 export function VerificationFlow({ workspaceId }: { workspaceId: string }) {
   const payment = useUpload(parseUploadAction);
-  const gcash = useUpload(parseGcashUploadAction);
+  const gcash = useGcashUploads();
   const [saving, setSaving] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +106,7 @@ export function VerificationFlow({ workspaceId }: { workspaceId: string }) {
   const savingRef = useRef(false);
 
   async function verify() {
-    if (!payment.ready || !gcash.ready || !payment.file || !gcash.file || savingRef.current) return;
+    if (!payment.ready || !gcash.ready || !payment.file || savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
     setSubmitted(true);
@@ -95,7 +114,7 @@ export function VerificationFlow({ workspaceId }: { workspaceId: string }) {
     sessionId.current ??= crypto.randomUUID();
     const form = new FormData();
     form.set("payment", payment.file);
-    form.set("gcash", gcash.file);
+    gcash.uploads.forEach(({ file }) => form.append("gcash", file));
     form.set("workspaceId", workspaceId);
     form.set("sessionId", sessionId.current);
     try {
@@ -122,7 +141,7 @@ export function VerificationFlow({ workspaceId }: { workspaceId: string }) {
   if (saved?.success) return (
     <Card><CardHeader><CardTitle>Verification Complete</CardTitle></CardHeader>
       <CardContent className="space-y-4">
-        <p>{payment.file?.name} + {gcash.file?.name}</p>
+        <p>{payment.file?.name} + {gcash.uploads.map(({ file }) => file.name).join(", ")}</p>
         <p>{saved.paymentCount} payment records and {saved.gcashCount} GCash transactions saved to one verification run.</p>
         {saved.summary && <dl aria-label="Reconciliation summary" className="grid grid-cols-2 gap-4 border-y py-4 sm:grid-cols-5">
           <div><dt className="text-sm text-muted-foreground">Total Payments</dt><dd className="text-2xl font-semibold tabular-nums">{saved.summary.total}</dd></div>
@@ -141,6 +160,12 @@ export function VerificationFlow({ workspaceId }: { workspaceId: string }) {
 
   return (
     <div className="space-y-6">
+      {saving && <div role="alertdialog" aria-modal="true" aria-labelledby="verification-loading-title" aria-describedby="verification-loading-description" className="fixed inset-0 z-[60] grid place-items-center bg-background/80 p-6 backdrop-blur-sm">
+        <div className="w-full max-w-sm space-y-4 rounded-xl border bg-card p-6 text-center shadow-lg">
+          <span aria-hidden="true" className="mx-auto block size-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <div className="space-y-2"><h2 id="verification-loading-title" className="text-lg font-semibold">Verifying payments</h2><p id="verification-loading-description" className="text-sm text-muted-foreground">Please wait while VeriPay saves your files and checks exact payment references. Do not close or navigate away from this page.</p></div>
+        </div>
+      </div>}
       <p className="text-sm text-muted-foreground">Select both files in any order. Preview and replace either file before you continue.</p>
       <div className="grid items-start gap-6 xl:grid-cols-2">
         <section aria-label="Payment Records" className="min-w-0">
@@ -163,33 +188,27 @@ export function VerificationFlow({ workspaceId }: { workspaceId: string }) {
           </Card>
         </section>
         <section aria-label="GCash Statement" className="min-w-0">
-          <Card><CardHeader><CardTitle>GCash Statement</CardTitle></CardHeader>
+          <Card><CardHeader><CardTitle>GCash Statements</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              {!gcash.file ? <GcashUploadDropzone onFileSelected={gcash.select} isProcessing={submitted} /> : <>
-                <p className="break-all font-medium">{gcash.file.name}</p>
-                {gcash.pending && <p role="status">Reading GCash transactions…</p>}
-                {gcash.error && <p role="alert">{gcash.error}</p>}
-                {gcash.result && <>
-                  <FileSummary result={gcash.result} />
-                  <p className="text-sm">Duplicate References: {gcash.result.summary?.duplicateReferenceCount ?? 0}</p>
-                  <p className="text-sm text-muted-foreground">Unknown direction: {gcash.result.summary?.unknownDirectionCount ?? 0}. Transactions are not automatically treated as customer payments.</p>
-                  <details><summary className="cursor-pointer text-sm font-medium">Preview</summary>
-                    <div className="mt-3"><GcashPreviewTable rows={gcash.result.preview ?? []} totalCount={gcash.result.validCount ?? 0} /></div>
-                  </details>
-                </>}
-                <Button variant="outline" disabled={submitted} onClick={gcash.reset}>Replace GCash File</Button>
-              </>}
+               <GcashUploadDropzone onFilesSelected={gcash.select} isProcessing={submitted} />
+               {gcash.uploads.length === 1 && <Button variant="outline" disabled={submitted} onClick={gcash.reset}>Replace GCash File</Button>}
+              {gcash.uploads.map(({ file, result, pending, error }) => <div key={`${file.name}-${file.lastModified}`} className="space-y-3 rounded-lg border p-3">
+                <div className="flex items-start justify-between gap-3"><p className="break-all font-medium">{file.name}</p><Button variant="outline" size="sm" disabled={submitted} onClick={() => gcash.remove(file)}>Remove</Button></div>
+                {pending && <p role="status">Reading GCash transactions…</p>}{error && <p role="alert">{error}</p>}
+                {result && <><FileSummary result={result} /><p className="text-sm">Duplicate References: {result.summary?.duplicateReferenceCount ?? 0}</p>
+                  <details><summary className="cursor-pointer text-sm font-medium">Preview</summary><div className="mt-3"><GcashPreviewTable rows={result.preview ?? []} totalCount={result.validCount ?? 0} /></div></details></>}
+              </div>)}
             </CardContent>
           </Card>
         </section>
       </div>
-      <div className="space-y-3 border-t pt-6">
-        <Button onClick={verify} disabled={!payment.ready || !gcash.ready || saving} aria-describedby="verify-help">
-          {saving ? "Verifying payments…" : "Verify Payments"}
-        </Button>
-        <p id="verify-help" className="max-w-2xl text-sm text-muted-foreground">
-          {payment.ready && gcash.ready ? "Both files are ready. Save and verify by exact reference. Amounts do not determine verification." : "Upload both Payment Records and GCash Statement to continue."}
-        </p>
+       <div className="space-y-3 border-t pt-6">
+         <Button onClick={verify} disabled={!payment.ready || !gcash.ready || saving} aria-describedby="verify-help">
+           {saving ? "Verifying payments…" : "Verify Payments"}
+         </Button>
+         <p id="verify-help" className="max-w-2xl text-sm text-muted-foreground">
+            {payment.ready && gcash.ready ? "All files are ready. Save and verify by exact reference. Amounts do not determine verification." : "Upload Payment Records and at least one GCash Statement to continue."}
+         </p>
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </div>
     </div>

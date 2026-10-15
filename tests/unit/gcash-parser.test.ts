@@ -38,6 +38,14 @@ describe("parseGcashWorkbook", () => {
     expect(result.warnings[0]?.field).toBe("row");
   });
 
+  it("parses headerless exports with repeated references and duplicated amount columns", async () => {
+    const row = (date: string, reference: string, amount: string) => [date, null, "Transfer from 09925251063 to 09190777226", null, null, null, reference, reference, reference, amount, amount];
+    const creditOnlyRow = ["2026-09-20 01:21 AM", null, "Transfer from 09565374852 to 09190777226", null, null, null, "4045238564907", "4045238564907", "4045238564907", null, "200.00"];
+    const result = await parseGcashWorkbook(await workbookBuffer([{ name: "AllPages", rows: [[], row("2026-09-19 10:01 PM", "9045235006755", "1,000.00"), row("2026-09-20 12:21 AM", "8045238564907", "300.00"), creditOnlyRow] }]));
+    expect(result.rows.map((entry) => [entry.rowIndex, entry.referenceNumber, entry.amountCentavos])).toEqual([[2, "9045235006755", 100000], [3, "8045238564907", 30000], [4, "4045238564907", 20000]]);
+    expect(result.errors).toHaveLength(0);
+  });
+
   it("rejects aggregate cell budgets before traversing multiple individually valid sheets", async () => {
     const book = new ExcelJS.Workbook();
     for (const name of ["January", "February"]) {
