@@ -12,7 +12,7 @@ export default async function VerificationResultsPage({ params, searchParams }: 
 }) {
   const { runId } = await params;
   const { workspace, supabase, run } = await authorizedRun(runId);
-  const sources = await supabase.from("verification_source_workbooks").select("kind").eq("verification_run_id", runId).eq("business_id", workspace.id);
+  const sources = await supabase.from("verification_source_workbooks").select("kind,source_index").eq("verification_run_id", runId).eq("business_id", workspace.id);
   if (sources.error) throw new Error("Could not load source availability.");
   const query = resultsQuerySchema.parse(await searchParams);
   const base = `/verification/${runId}`;
@@ -46,7 +46,7 @@ export default async function VerificationResultsPage({ params, searchParams }: 
       <Link href="/history" className="text-sm underline">Back to History</Link>
       <h1 className="text-2xl font-semibold tracking-tight">Verification Results</h1>
       <p>Workspace: <strong>{workspace.name}</strong></p>
-      <DownloadExcelButton runId={runId} sourcePreserved={sources.data?.length === 2} />
+       <DownloadExcelButton runId={runId} sourcePreserved={!!sources.data?.some((source) => source.kind === "payments") && !!sources.data?.some((source) => source.kind === "gcash")} gcashSourceCount={Math.max(1, sources.data?.filter((source) => source.kind === "gcash").length ?? 0)} />
       <dl className="grid gap-2 text-sm sm:grid-cols-3">
         <div className="min-w-0"><dt className="text-muted-foreground">Payment File</dt><dd className="break-all">{run.payment_filename ?? "Unavailable"}</dd></div>
         <div className="min-w-0"><dt className="text-muted-foreground">GCash File</dt><dd className="break-all">{run.gcash_filename ?? "Unavailable"}</dd></div>

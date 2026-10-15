@@ -5,37 +5,31 @@ import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 interface GcashUploadDropzoneProps {
-  readonly onFileSelected: (file: File) => void;
+  readonly onFilesSelected: (files: readonly File[]) => void;
   readonly isProcessing: boolean;
 }
 
 export function GcashUploadDropzone({
-  onFileSelected,
+  onFilesSelected,
   isProcessing,
 }: GcashUploadDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = useCallback(
-    (file: File) => {
-      const ext = file.name.split(".").pop()?.toLowerCase();
-      if (ext !== "xlsx" && ext !== "xls") {
-        alert("Please upload an Excel file (.xlsx or .xls)");
-        return;
-      }
-      onFileSelected(file);
-    },
-    [onFileSelected],
-  );
+  const selectFiles = useCallback((files: readonly File[]) => {
+    const valid = files.filter((file) => file.name.split(".").pop()?.toLowerCase() === "xlsx");
+    if (valid.length !== files.length) alert("Please upload Excel files (.xlsx)");
+    if (valid.length) onFilesSelected(valid);
+  }, [onFilesSelected]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (file) handleFile(file);
+      const files = [...e.dataTransfer.files];
+      if (files.length) selectFiles(files);
     },
-    [handleFile],
+    [selectFiles],
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -61,11 +55,12 @@ export function GcashUploadDropzone({
       <input
         ref={inputRef}
         type="file"
-        accept=".xlsx,.xls"
+        multiple
+        accept=".xlsx"
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleFile(file);
+          const files = [...(e.target.files ?? [])];
+          if (files.length) selectFiles(files);
         }}
       />
 
@@ -86,10 +81,10 @@ export function GcashUploadDropzone({
       </div>
 
       <p className="mb-1 text-sm font-medium">
-        Drop your GCash Statement Excel file here
+        Drop one or more GCash Statement Excel files here
       </p>
       <p className="mb-4 text-xs text-muted-foreground">
-        .xlsx or .xls files only
+        .xlsx files only
       </p>
 
       <Button
@@ -98,7 +93,7 @@ export function GcashUploadDropzone({
         disabled={isProcessing}
         onClick={() => inputRef.current?.click()}
       >
-        {isProcessing ? "Processing..." : "Choose file"}
+        {isProcessing ? "Processing..." : "Choose files"}
       </Button>
     </div>
   );

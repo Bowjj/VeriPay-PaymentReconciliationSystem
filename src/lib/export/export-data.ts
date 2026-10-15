@@ -6,7 +6,7 @@ export const exportPaymentSchema = paymentDetailSchema.safeExtend({ business_id:
 export const exportGcashSchema = gcashResultSchema.extend({ business_id: z.uuid(), verification_run_id: z.uuid(), matched_payment_id: z.uuid().nullable() });
 export const exportDataSchema = z.object({
   workspaceName: z.string(), run: runSummarySchema, payments: z.array(exportPaymentSchema), gcash: z.array(exportGcashSchema),
-  sources: z.object({ payments: sourceWorkbookSchema.optional(), gcash: sourceWorkbookSchema.optional() }).optional(),
+  sources: z.object({ payments: sourceWorkbookSchema.optional(), gcash: sourceWorkbookSchema.optional(), gcashSources: z.array(z.object({ sourceIndex: z.number().int().nonnegative(), source: sourceWorkbookSchema })).optional() }).optional(),
 });
 export type ExportData = z.infer<typeof exportDataSchema>;
 export type ExportPayment = z.infer<typeof exportPaymentSchema>;

@@ -88,6 +88,7 @@ export function parseGcashRow(
   rawRow: readonly unknown[],
   formattedRow: readonly unknown[],
   amountColumns: readonly number[] = [8, 10],
+  deduplicateMatchingAmounts = false,
 ): GcashRowParseResult {
   const firstCell = cellText(formattedRow[0]);
   if (isMetadata(firstCell)) return { kind: "skip" };
@@ -111,14 +112,15 @@ export function parseGcashRow(
   }
 
   const amountValues = amountColumns.map((column) => cellText(formattedRow[column])).filter(Boolean);
-  if (amountValues.length !== 1) {
+  const distinctAmountValues = deduplicateMatchingAmounts ? [...new Set(amountValues)] : amountValues;
+  if (distinctAmountValues.length !== 1) {
     return {
       kind: "error",
       field: "amount",
-      message: amountValues.length === 0 ? "Missing transaction amount" : "Ambiguous debit and credit amounts",
+      message: distinctAmountValues.length === 0 ? "Missing transaction amount" : "Ambiguous debit and credit amounts",
     };
   }
-  const parsedAmount = parseCentavos(amountValues[0] ?? "");
+  const parsedAmount = parseCentavos(distinctAmountValues[0] ?? "");
   if (!parsedAmount.success) {
     return { kind: "error", field: "amount", message: parsedAmount.error };
   }

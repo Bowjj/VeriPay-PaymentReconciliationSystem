@@ -10,13 +10,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ runI
   const { runId } = await params;
   const { supabase, workspace } = await authorizedRun(runId);
   const kind = new URL(request.url).searchParams.get("file");
+  const requestedSource = new URL(request.url).searchParams.get("source");
+  const sourceIndex = requestedSource === null ? 0 : Number(requestedSource);
   if (kind !== "payments" && kind !== "gcash") return Response.json({ error: "Choose Payment Records or GCash." }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
+  if (!Number.isInteger(sourceIndex) || sourceIndex < 0) return Response.json({ error: "Choose a valid GCash source." }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
   try {
     const data = await loadVerificationExport(supabase, workspace.id, runId);
-    const { buffer, annotationConflicts } = await operationalWorkbookExport(data, kind);
+    const { buffer, annotationConflicts } = await operationalWorkbookExport(data, kind, sourceIndex);
     return new Response(buffer, { headers: {
       "Content-Type": XLSX_MIME,
-      "Content-Disposition": `attachment; filename="${exportFilename(data, kind)}"`,
+      "Content-Disposition": `attachment; filename="${exportFilename(data, kind, sourceIndex)}"`,
       "Cache-Control": "private, no-store, max-age=0",
       "Vary": "Cookie",
       "X-Content-Type-Options": "nosniff",

@@ -14,11 +14,17 @@ export const STATUS_COLORS: Record<string, { fill: string; text: string }> = {
   BANK: { fill: "FFFEF9C3", text: "FF854D0E" },
   UNKNOWN: { fill: "FFFFEDD5", text: "FF9A3412" },
 };
-const envelopeSchema = z.object({ sheet_name: z.string().optional(), source: z.record(z.string(), z.unknown()).optional() });
+const envelopeSchema = z.object({ filename: z.string().optional(), sheet_name: z.string().optional(), source_index: z.number().int().nonnegative().optional(), source: z.record(z.string(), z.unknown()).optional() });
 const gcashCellsSchema = z.object({ headers: z.array(z.unknown()), cells: z.array(z.unknown()) });
 
-export function exportFilename(data: ExportData, kind: ExportKind) {
-  const original = kind === "payments" ? data.run.payment_filename : data.run.gcash_filename;
+export function exportFilename(data: ExportData, kind: ExportKind, sourceIndex = 0) {
+  const sourceFilename = kind === "gcash"
+    ? data.gcash.find((row) => {
+      const envelope = envelopeSchema.safeParse(row.raw_data);
+      return envelope.success && envelope.data.source_index === sourceIndex && !!envelope.data.filename;
+    })
+    : undefined;
+  const original = kind === "payments" ? data.run.payment_filename : envelopeSchema.parse(sourceFilename?.raw_data ?? {}).filename ?? data.run.gcash_filename;
   const fallback = kind === "payments" ? "Payment Records" : "GCash";
   const base = (original ?? fallback).replace(/^.*[\\/]/, "").replace(/\.(xlsx?|xlsm)$/i, "")
     .normalize("NFKC").replace(/[^A-Za-z0-9 _().-]/g, "_").replace(/^[ .]+|[ .]+$/g, "").slice(0, 100) || fallback;
@@ -166,16 +172,22 @@ function recoveredWorkbook(data: ExportData, kind: ExportKind, customers: Map<st
   return book;
 }
 
-export async function buildOperationalWorkbook(data: ExportData, kind: ExportKind): Promise<ExcelJS.Workbook> {
+export async function buildOperationalWorkbook(data: ExportData, kind: ExportKind, sourceIndex = 0): Promise<ExcelJS.Workbook> {
   const customers = validateSnapshot(data);
-  const source = data.sources?.[kind];
+  const sourceValue = kind === "gcash" ? data.sources?.gcashSources : undefined;
+  const source: SourceWorkbook | undefined = kind === "gcash" && sourceValue
+    ? sourceValue.find((entry) => entry.sourceIndex === sourceIndex)?.source
+    : data.sources?.[kind];
   if (!source) return recoveredWorkbook(data, kind, customers);
   const book = await loadSource(source);
   const seen = new Set<string>();
   const layouts = new Map<string, { sheet: ExcelJS.Worksheet; column: number; offset: number; header: number; matches: Map<number, string> }>();
   const first = source.sheets[0];
   for (const meta of source.sheets) {
-    const sheetRows = kind === "payments" ? (meta === first ? data.payments : []) : data.gcash.filter((g) => envelopeSchema.parse(g.raw_data).sheet_name === meta.name);
+    const sheetRows = kind === "payments" ? (meta === first ? data.payments : []) : data.gcash.filter((g) => {
+      const envelope = envelopeSchema.parse(g.raw_data);
+      return envelope.sheet_name === meta.name && (!Array.isArray(sourceValue) || (envelope.source_index ?? 0) === sourceIndex);
+    });
     const hasRecords = kind === "payments" ? meta === first : sheetRows.length > 0;
     if (!hasRecords) continue;
     const sheet = book.getWorksheet(meta.name);
@@ -197,7 +209,7 @@ export async function buildOperationalWorkbook(data: ExportData, kind: ExportKin
     // range for source metadata, not an adjustment to persisted provenance.
     layouts.set(meta.name, { sheet, column, offset: shift, header, matches: new Map() });
   }
-  const rows = kind === "payments" ? data.payments : data.gcash;
+  const rows = kind === "payments" ? data.payments : data.gcash.filter((row) => !Array.isArray(sourceValue) || envelopeSchema.parse(row.raw_data).source_index === sourceIndex);
   for (const row of rows) {
     const envelope = envelopeSchema.parse(row.raw_data);
     const name = kind === "payments" ? first?.name : envelope.sheet_name;
@@ -216,10 +228,10 @@ export async function buildOperationalWorkbook(data: ExportData, kind: ExportKin
   if (kind === "gcash") for (const layout of layouts.values()) annotateGcashSheet(layout.sheet, layout.header, layout.column - 1, layout.matches);
   return book;
 }
-export async function operationalWorkbookBuffer(data: ExportData, kind: ExportKind) {
-  return (await operationalWorkbookExport(data, kind)).buffer;
+export async function operationalWorkbookBuffer(data: ExportData, kind: ExportKind, sourceIndex = 0) {
+  return (await operationalWorkbookExport(data, kind, sourceIndex)).buffer;
 }
-export async function operationalWorkbookExport(data: ExportData, kind: ExportKind) {
-  const book = await buildOperationalWorkbook(data, kind);
+export async function operationalWorkbookExport(data: ExportData, kind: ExportKind, sourceIndex = 0) {
+  const book = await buildOperationalWorkbook(data, kind, sourceIndex);
   return { buffer: new Uint8Array(await book.xlsx.writeBuffer()), annotationConflicts: kind === "gcash" ? countAnnotationConflicts(book) : 0 };
 }
